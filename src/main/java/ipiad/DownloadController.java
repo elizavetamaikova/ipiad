@@ -92,15 +92,28 @@ public class DownloadController extends Thread {
         }
     }
 
-    public void publishToRMQ (String element, String queuePublish) {
+    public void publishToRMQ(String element, String queuePublish) {
         byte[] messageBodyBytes = element.getBytes();
+        log.info("Publishing to queue: " + queuePublish);
+        Channel channel;
         try {
-            channel.queueDeclare(queuePublish, false, false, false, null);
+            channel = this.conn.createChannel();
+        } catch (IOException e) {
+            log.error(e);
+            return;
+        }
+        try {
+//            channel.queueDeclare(queuePublish, false, false, false, null);
             channel.basicPublish(
                     exchangeName,
                     queuePublish,
                     false,
                     MessageProperties.PERSISTENT_TEXT_PLAIN, messageBodyBytes);
+        } catch (Exception e) {
+            log.error(e);
+        }
+        try {
+            channel.close();
         } catch (Exception e) {
             log.error(e);
         }

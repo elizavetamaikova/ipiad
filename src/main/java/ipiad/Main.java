@@ -11,6 +11,8 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.Executors;
 
 public class Main {
 
@@ -31,10 +33,22 @@ public class Main {
                 hostRMQ,
                 portRMQ);
 
-        Thread downloadController = new Thread(new DownloadController(rabbitCreds));
-        downloadController.start();
-        Thread parserController = new Thread(new ParserController(rabbitCreds));
-        parserController.start();
+        int downloadThreads = 4;
+        int parseThreads = 2;
+
+        for (int i = 0; i < downloadThreads; i++) {
+            DownloadController downloadThread = new DownloadController(rabbitCreds);
+            downloadThread.start();
+        }
+        for (int i = 0; i < parseThreads; i++) {
+            ParserController parseThread = new ParserController(rabbitCreds);
+            parseThread.start();
+        }
+
+//        Thread downloadController = new Thread(new DownloadController(rabbitCreds));
+//        downloadController.start();
+//        Thread parserController = new Thread(new ParserController(rabbitCreds));
+//        parserController.start();
 //        String sUrl = "https://gazeta.ru/?utm_source=vsesmi_online";
 //        URL url = new URL(sUrl);
 //        Document doc = downloadController.getUrl(url);
