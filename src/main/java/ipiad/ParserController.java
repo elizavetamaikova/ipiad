@@ -3,6 +3,7 @@ package ipiad;
 import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.*;
+import com.typesafe.config.Config;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.codehaus.jackson.map.JsonMappingException;
@@ -34,13 +35,13 @@ public class ParserController extends Thread {
 
     Connection conn;
 
-    public ParserController(RabbitCreds rabbitCreds) throws IOException, TimeoutException {
+    public ParserController(Config config) throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
-        factory.setUsername(rabbitCreds.username);
-        factory.setPassword(rabbitCreds.password);
-        factory.setVirtualHost(rabbitCreds.virtualHost);
-        factory.setHost(rabbitCreds.host);
-        factory.setPort(rabbitCreds.port);
+        factory.setUsername(config.getString("user"));
+        factory.setPassword(config.getString("password"));
+        factory.setVirtualHost(config.getString("virtualHost"));
+        factory.setHost(config.getString("host"));
+        factory.setPort(config.getInt("port"));
         this.conn = factory.newConnection();
         this.channel = this.conn.createChannel();
         this.channel.queueDeclare(queueProduce, false, false, false, null);
@@ -53,6 +54,7 @@ public class ParserController extends Thread {
             channel.basicConsume(queueConsume, false, consumerTag, new DefaultConsumer(channel) {
                 public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
                     long deliveryTag = envelope.getDeliveryTag();
+                    channel.basicAck(deliveryTag, false);
                     String message = new String(body, StandardCharsets.UTF_8);
                     List<String> urls = parseDocument(message);
                     log.info("Parsing new html");
@@ -64,9 +66,9 @@ public class ParserController extends Thread {
                     if (article!= null) {
                         // convert user object to json string and return it
                         String jsonString = article.toJson().toString();
+                        log.info("Publishing to elkQueue");
                         publishToRMQ(jsonString, queueElk);
                     }
-                    channel.basicAck(deliveryTag, false);
                 }
             });
         } catch (Exception e) {
@@ -110,7 +112,7 @@ public class ParserController extends Thread {
             Date date = formatter.parse(timeTag);
             String title = parsedDoc.getElementsByTag("title").first().text();
             String url = parsedDoc.select("meta[property=og:url]").first().attr("content");
-            String author = parsedDoc.getElementsByClass("author-item").first().select("a").first().text();
+            String author = parsedDoc.selectFirst("[itemprop=name]").text();
             Elements contents = parsedDoc.getElementsByClass("b_article-text").select("p");
             String content = "";
             for (Element element : contents) {
@@ -127,16 +129,15 @@ public class ParserController extends Thread {
         List<String> urls = new ArrayList();
         try {
             Document parsedDoc = Jsoup.parse(doc);
-            Elements aTag = parsedDoc.getElementsByClass("w_col2").
-                    select("a");
+            Elements aTag = parsedDoc.getElementsByTag("a");
             for (Element element : aTag) {
                 try {
                     String link = element.attr("href");
 //                    log.info(element.text());
-                    if (!link.startsWith("https://") && !link.startsWith("http://")) {
+                    if (!link.startsWith("https://") && !link.startsWith("http://") && link.endsWith(".shtml")) {
                         link = baseUrl + link;
+                        urls.add(link);
                     }
-                    urls.add(link);
                 } catch (Exception e) {
                     log.error(e);
                 }

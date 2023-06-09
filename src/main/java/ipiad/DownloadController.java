@@ -1,6 +1,7 @@
 package ipiad;
 
 import com.rabbitmq.client.*;
+import com.typesafe.config.Config;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
@@ -48,25 +49,28 @@ public class DownloadController extends Thread {
 
     static String consumerTag = "myConsumerTag";
 
+    static ArrayList<String> urls = new ArrayList<String>();
+
     Connection conn;
 
     public static String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36";
 
-    public DownloadController(RabbitCreds rabbitCreds) throws IOException, TimeoutException {
+    public DownloadController(Config config) throws IOException, TimeoutException {
         CookieStore httpCookieStore = new BasicCookieStore();
         client = HttpClients.custom().setUserAgent(this.userAgent).build();
         context = HttpClientContext.create();
         context.setCookieStore(httpCookieStore);
 
         ConnectionFactory factory = new ConnectionFactory();
-        factory.setUsername(rabbitCreds.username);
-        factory.setPassword(rabbitCreds.password);
-        factory.setVirtualHost(rabbitCreds.virtualHost);
-        factory.setHost(rabbitCreds.host);
-        factory.setPort(rabbitCreds.port);
+        factory.setUsername(config.getString("user"));
+        factory.setPassword(config.getString("password"));
+        factory.setVirtualHost(config.getString("virtualHost"));
+        factory.setHost(config.getString("host"));
+        factory.setPort(config.getInt("port"));
         this.conn = factory.newConnection();
         this.channel = this.conn.createChannel();
         this.channel.queueDeclare(queueConsume, false, false, false, null);
+        this.channel.queueDeclare(queueProduce, false, false, false, null);
     }
 
     @Override
@@ -75,16 +79,21 @@ public class DownloadController extends Thread {
             channel.basicConsume(queueConsume, false, consumerTag, new DefaultConsumer(channel) {
                 public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
                     long deliveryTag = envelope.getDeliveryTag();
-                    String message = new String(body, StandardCharsets.UTF_8);
-                    log.info("Got link: " + message);
-                    URL url = new URL(message);
-                    try {
-                        String doc = String.valueOf(getUrl(url));
-                        publishToRMQ(doc, queueProduce);
-                    } catch (URISyntaxException e) {
-                        throw new RuntimeException(e);
-                    }
                     channel.basicAck(deliveryTag, false);
+                    String message = new String(body, StandardCharsets.UTF_8);
+                    if (!urls.contains(message)) {
+                        log.info("Got link: " + message);
+                        urls.add(message);
+                        try {
+                            URL url = new URL(message);
+                            String doc = String.valueOf(getUrl(url));
+                            publishToRMQ(doc, queueProduce);
+                        } catch (URISyntaxException e) {
+                            throw new RuntimeException(e);
+                        }
+                    } else {
+                        log.info("link: " + message + " duplicate");
+                    }
                 }
             });
         } catch (Exception e) {
@@ -145,7 +154,8 @@ public class DownloadController extends Thread {
                 } else if (code == 200) {
                     HttpEntity entity = response.getEntity();
                     if (entity != null) {
-                        doc = EntityUtils.toString(entity, "UTF-8");;
+                        doc = EntityUtils.toString(entity, "UTF-8");
+                        ;
                         break;
                     }
                     bStop = true; //break
