@@ -63,6 +63,7 @@ public class Article {
         article.put("title", this.title);
         article.put("author", this.author);
         article.put("url", this.url);
+        article.put("content", this.content);
         article.put("date", this.date.toString());
         article.put("md5", md5Hash);
         return article;

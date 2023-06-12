@@ -20,9 +20,10 @@ public class Main {
         org.apache.log4j.BasicConfigurator.configure(new NullAppender());
         Config conf = ConfigFactory.load();
 
-        int downloadThreads = 1;
-        int parseThreads = 1;
-        int elkThreads = 1;
+        int downloadThreads = 0;
+        int parseThreads = 0;
+        int elkThreads = 0;
+        int shinglerThreads = 0;
 
 
         for (int i = 0; i < downloadThreads; i++) {
@@ -37,5 +38,12 @@ public class Main {
             ELKController elkThread = new ELKController(conf.getConfig("rabbit"), conf.getConfig("elastic"));
             elkThread.start();
         }
+        for (int i = 0; i < shinglerThreads; i++) {
+            Shingler shinglerThread = new Shingler(conf.getConfig("elastic"));
+            shinglerThread.start();
+        }
+
+        ShingleFinder shingleFinder = new ShingleFinder(conf.getConfig("elastic"));
+        shingleFinder.findSimilarDocuments(500);
     }
 }
